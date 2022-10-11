@@ -36,7 +36,7 @@ const byte MODULES3 = 24;
 const byte MODULES4 = 32;
 const byte ROWWIDTH = 8;
 const byte COLHEIGHT = 8;
-byte screenMemory[numOfDevices][8]{0};
+byte screenBuffer[numOfDevices][8]{0};
 //Pixel objects
 class pixels {
   public :
@@ -79,7 +79,8 @@ const int16_t maxGyroRead = 32767;
 int16_t accelX, accelY, accelZ, gyroX, gyroY, gyroZ;
 
 void updateAll(uint16_t cmd, uint8_t data);
-void clearAllDisplays();
+void sendScreenBuffer();
+void wipeDisplays();
 
 void setup() {
   Serial.begin(9600);
@@ -93,7 +94,7 @@ void setup() {
   // LED Matrix setup
   pinMode(CSPIN, OUTPUT);
 	SPI.begin();
-  clearAllDisplays();
+  wipeDisplays();
 	updateAll(INTENSITY, 0);
 	updateAll(DISPLAY_TEST, 0);
 	updateAll(DECODE_MODE, 0);
@@ -103,13 +104,40 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  gyro.getMotion6(&accelX, &accelY, &accelZ, &gyroX, &gyroY, &gyroZ);
+  /*gyro.getMotion6(&accelX, &accelY, &accelZ, &gyroX, &gyroY, &gyroZ);
   pixel.updateMovement(map(gyroX, minGyroRead, maxGyroRead, -50, 50), map(gyroY, minGyroRead, maxGyroRead, -50, 50));
   pixel.updateXandY();
   updateAll(pixel.y + 1, pixel.x);
   delay(100);
-  clearAllDisplays();
+  clearAllDisplays();*/
+  uint8_t x = random(0, MODULES3);
+  uint8_t y = random(0, 8);
+  Serial.print("Initial number : ");
+  Serial.println(x);
+  Serial.print("Divided by 8 : ");
+  Serial.println(floor(x / 8)); //use this for getting the right module number
+  Serial.print("Modelo : ");
+  Serial.println(x % 8);
+  uint8_t temp = 128; //set HSB
+  screenBuffer[int(floor(x /8))][y] = temp >> int(x % 8); //move down from HSB otherwise it appears at the wrong end
+  sendScreenBuffer();
+  delay(10000);
+  wipeDisplays();
+  delay(1000);
+}
 
+void sendScreenBuffer(){
+  //updates the matrixes with the screen buffer contents
+	for (byte j = 0; j < COLHEIGHT; j++){
+  	SPI.beginTransaction(SPISettings(16000000, MSBFIRST, SPI_MODE0));
+		digitalWrite(CSPIN, LOW);
+		for (byte i = 0; i < numOfDevices; i++){
+			uint16_t temp = (j + 1) << 8 | screenBuffer[i][j];
+      SPI.transfer16(temp);
+		}
+		digitalWrite(CSPIN, HIGH);
+		SPI.endTransaction();	
+	}
 }
 void updateAll(uint16_t cmd, uint8_t data){
 //used for sending operation codes
@@ -122,16 +150,8 @@ void updateAll(uint16_t cmd, uint8_t data){
 	digitalWrite(CSPIN, HIGH);
 	SPI.endTransaction();
 }
-void clearAllDisplays(){
-//turns all LEDs on all displays off
-  for (byte j = 1; j <= COLHEIGHT; j++){ //1 to 8 as a 0 means no op
-	  for (byte i = 0; i < numOfDevices; i++){
-			SPI.beginTransaction(SPISettings(16000000, MSBFIRST, SPI_MODE0));
-			digitalWrite(CSPIN, LOW);			
-			uint16_t x = (j << 8) | B00000000;
-			SPI.transfer16(x);
-			digitalWrite(CSPIN, HIGH);
-			SPI.endTransaction();
-		}
-	}
+void wipeDisplays(){
+  for (byte colNumber = 1; colNumber <= COLHEIGHT; colNumber++){
+    updateAll(colNumber, 0);
+  }
 }
