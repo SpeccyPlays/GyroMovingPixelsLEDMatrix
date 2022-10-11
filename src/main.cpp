@@ -15,6 +15,8 @@ SDA and SCL -> marked SDA and SCL pins on board
 #include <Arduino.h>
 #include <SPI.h>
 #include <Wire.h>
+#include <I2Cdev.h>
+#include <MPU6050.h>
 #include "LEDMatrix.h"
 #include "Pixels.h"
 
@@ -37,29 +39,58 @@ const byte COLHEIGHT = 8;
 byte screenMemory[numOfDevices][8]{0};
 //Pixel objects
 class pixels {
-  byte x = 0;
-  byte y = 0;
-  byte oldX = 0;
-  byte oldY = 0;
-  byte speedX = 0;
-  byte speedY = 0;
+  public :
+  uint8_t x = 4;
+  uint8_t y = 4;
+  //these are used to check what movement is happening
+  int8_t oldMovementX = 0;
+  int8_t oldMovementY = 0;
+  int8_t movementX = 0;
+  int8_t movementY = 0;
+  void updateMovement(int8_t newMoveX, int8_t newMoveY){
+    //see what the change in movement is
+    oldMovementX = movementX;
+    oldMovementY = movementY;
+    movementX = newMoveX;
+    movementY = newMoveY;
+  }
+  void updateXandY(){
+    
+    if (x < 128 && movementX > oldMovementX){
+      x = x << 1;
+    }
+    if (x > 1 && movementX < oldMovementX){
+      x = x >> 1;
+    }
+    if (y > 0 && movementY < oldMovementY){
+      y --;
+    }
+    if (y < COLHEIGHT - 1 && movementY > oldMovementY){
+      y ++;
+    }
+  }
 };
+pixels pixel;
 //GY-521 details
 const int MPU=0x68;
-int16_t AcX,AcY,AcZ,Tmp,GyX,GyY,GyZ;
+MPU6050 gyro;
+const int16_t minGyroRead = -32768;
+const int16_t maxGyroRead = 32767;
+int16_t accelX, accelY, accelZ, gyroX, gyroY, gyroZ;
 
 void updateAll(uint16_t cmd, uint8_t data);
 void clearAllDisplays();
-void readGy521();
 
 void setup() {
   Serial.begin(9600);
-  //Start GY-521
-  Wire.beginTransmission(MPU);
-  Wire.write(0x6B); 
-  Wire.write(0);    
-  Wire.endTransmission(true);
-  // LED Matrix start
+  Wire.begin();
+  // GY 521 setup
+  Serial.print("Starting gyro");
+  gyro.initialize();
+  /*gyro.setXGyroOffset(220);
+  gyro.setYGyroOffset(76);
+  gyro.setZGyroOffset(-85);*/
+  // LED Matrix setup
   pinMode(CSPIN, OUTPUT);
 	SPI.begin();
   clearAllDisplays();
@@ -72,33 +103,13 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  //readGy521();
-  for (byte i = 0; i < COLHEIGHT; i ++){
-    updateAll(i+1, (1 << i) );
-    delay(100);
-  }
-    for (byte i = 0; i < COLHEIGHT; i ++){
-    updateAll(i+1, (128 >> i) );
-    delay(100);
-  }
+  gyro.getMotion6(&accelX, &accelY, &accelZ, &gyroX, &gyroY, &gyroZ);
+  pixel.updateMovement(map(gyroX, minGyroRead, maxGyroRead, -50, 50), map(gyroY, minGyroRead, maxGyroRead, -50, 50));
+  pixel.updateXandY();
+  updateAll(pixel.y + 1, pixel.x);
+  delay(100);
+  clearAllDisplays();
 
-}
-
-void readGy521(){
-  Wire.beginTransmission(MPU);
-  Wire.write(0x3B);  
-  Wire.endTransmission(false);
-  Wire.requestFrom(MPU,12,true);  
-  
-  GyX=Wire.read()<<8;//|Wire.read();  
-  GyY=Wire.read()<<8;//|Wire.read();  
-  GyZ=Wire.read()<<8;//|Wire.read();  
-  Serial.print("Gyroscope: ");
-  Serial.print("X = "); Serial.print(GyX);
-  Serial.print(" | Y = "); Serial.print(GyY);
-  Serial.print(" | Z = "); Serial.println(GyZ);
-  Serial.println(" ");
-  delay(333);
 }
 void updateAll(uint16_t cmd, uint8_t data){
 //used for sending operation codes
