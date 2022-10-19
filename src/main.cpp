@@ -6,9 +6,11 @@ Board Arduino Uno
 CLK -> PIN 13
 CS -> PIN 10
 DIN -> PIN 11
+Orientation of matrix - input on right side
 
 ## GY-521 pins ##
 SDA and SCL -> marked SDA and SCL pins on board
+Orientation of unit - pins are on right hand side
 
 */
 
@@ -36,100 +38,69 @@ const byte MODULES4 = 32;
 const byte ROWWIDTH = 8;
 const byte COLHEIGHT = 8;
 byte screenBuffer[numOfModules][8]{0};
-//Pixel objects
+//Pixel object
 class pixels {
   public :
   uint8_t x = 0;
   uint8_t y = 0;
-  //these are used to check what movement is happening
-  int8_t oldMovementX = 0;
-  int8_t oldMovementY = 0;
-  int8_t movementX = 0;
-  int8_t movementY = 0;
   void generateXYValues(){
     //co ordinates start at 0 so one matrix will be x 0-7 and y 0-7
     x = random(0, (numOfModules * ROWWIDTH) - 1);
     y = random(0, COLHEIGHT - 1);
   }
-  void updateMovement(int8_t newMoveX, int8_t newMoveY){
-    //update the change in movement
-    oldMovementX = movementX;
-    oldMovementY = movementY;
-    movementX = newMoveX;
-    movementY = newMoveY;
-  }
-  void updateXandY(){
-    if (x < ((numOfModules * ROWWIDTH) - 1) && x < movementX){
-      x ++;
-    }
-    else if (x > 0 && x > movementX){
-      x--;
-    }
-    if (y > 0 && y > movementY){
-      y --;
-    }
-    else if (y < COLHEIGHT - 1 && y < movementY){
-      y ++;
-    }
-    if (y == movementY){
-      uint8_t bounce = random(-2, 2);
-      y += bounce;
-    }
-    if (x == movementX){
-      uint8_t bounce = random(-3, 3);
-      x += bounce;
-    }
-    if (x < 0){
+  void updateXandY(int8_t moveX, int8_t moveY){
+    //Update position as long as pixel not at edge of matrix
+    if ((x + moveX) < 0){
       x = 0;
     }
-    if (x > 31){
-      x = 31;
+    else if ((x + moveX) > ((numOfModules * ROWWIDTH) - 1)){
+      x = (numOfModules * ROWWIDTH) - 1;
     }
-    if (y < 0){
+    else {
+      x += moveX;
+    }
+    if ((y + moveY) < 0){
       y = 0;
     }
-    if (y > 7){
-      y = 7;
+    else if ((y + moveY) > (COLHEIGHT -1)){
+      y = (COLHEIGHT -1);
     }
-      /*
-    if (x < ((numOfModules * ROWWIDTH) - 1) && movementX > oldMovementX){
-      x ++;
+    else{
+      y += moveY;
     }
-    else if (x > 0 && movementX < oldMovementX){
-      x--;
-    }
-    if (y > 0 && movementY < oldMovementY){
-      y --;
-    }
-    else if (y < COLHEIGHT - 1 && movementY > oldMovementY){
-      y ++;
-    }*/
   }
 };
-pixels pixel[8];
+//create the pixel object
+pixels pixel[60];
 //GY-521 details
 const int MPU=0x68;
 MPU6050 gyro;
-const int16_t minGyroRead = -32768;
-const int16_t maxGyroRead = 32767;
 int16_t accelX, accelY, accelZ, gyroX, gyroY, gyroZ;
+int8_t xMoveIncrement = 0;
+int8_t yMoveIncrement = 0;
+int16_t offset = 800; //mine kept getting false readings between -600, +600
+
 
 void updateAll(uint16_t cmd, uint8_t data);
 void sendScreenBuffer();
 void wipeDisplays();
 void drawPixel(byte x, byte y);
 void wipeScreenBuffer();
+void decideMoveIncrements(int16_t &xMove, int16_t &yMove);
+
 
 void setup() {
   Serial.begin(115200);
   Wire.begin();
   // GY 521 setup
-  Serial.print("Starting gyro");
+  Serial.println("Starting gyro");
   gyro.initialize();
-  /*gyro.CalibrateGyro(20);
-  gyro.setXGyroOffset(220);
-  gyro.setYGyroOffset(76);
-  gyro.setZGyroOffset(-85);*/
+  //below offsets are for my gy521 only
+  gyro.setXAccelOffset(1024);
+  gyro.setYAccelOffset(1188);
+  gyro.setXGyroOffset(35);
+  gyro.setYGyroOffset(302);
+  gyro.setZGyroOffset(-4);
   // LED Matrix setup
   pinMode(CSPIN, OUTPUT);
 	SPI.begin();
@@ -139,6 +110,7 @@ void setup() {
 	updateAll(DECODE_MODE, 0);
 	updateAll(SCAN_LIMIT, 7);
 	updateAll(SHUTDOWN, 1);
+  //set x and y values for all pixel objects
   for (byte i = 0; i < sizeof(pixel)/sizeof(pixel[0]); i++){
     pixel[i].generateXYValues();
     drawPixel(pixel[i].x, pixel[i].y);
@@ -149,17 +121,32 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  gyro.getMotion6(&accelX, &accelY, &accelZ, &gyroX, &gyroY, &gyroZ);
-  uint8_t mappedX = map(gyroX, minGyroRead, maxGyroRead, 0, 31);
-  uint8_t mappedY = map(gyroY, minGyroRead, maxGyroRead, 7, 0);
+  
+  /*Serial.print("Accel x : ");
+  Serial.println(accelX);
+  Serial.print("Accel Y : ");
+  Serial.println(accelY);*/
+  
+  //rather than batch update all the pixels, it looks better taking a reading for each
+  //it does slow things down though
   for (byte i = 0; i < sizeof(pixel)/sizeof(pixel[0]); i++){
-    pixel[i].updateMovement(mappedX, mappedY);
-    pixel[i].updateXandY();
+    gyro.getMotion6(&accelX, &accelY, &accelZ, &gyroX, &gyroY, &gyroZ);
+    decideMoveIncrements(accelX, accelY);
+    pixel[i].updateXandY(xMoveIncrement, yMoveIncrement);
+  }
+  //collision detect
+  for (byte i = 1;  i < sizeof(pixel)/sizeof(pixel[0]); i++){
+    if ((pixel[i].x == pixel[i-1].x)){
+      pixel[i].updateXandY(-xMoveIncrement, 0);
+    }
+    if (pixel[i].y == pixel[i-1].y){
+      pixel[i].updateXandY(0, -yMoveIncrement);
+    }
     drawPixel(pixel[i].x, pixel[i].y);
   }
   sendScreenBuffer();
   wipeScreenBuffer();
-  delay(50);
+  delay(0);
 }
 void drawPixel(byte x, byte y){
   //draw a pixel in screen memory
@@ -175,7 +162,6 @@ void wipeScreenBuffer(){
 	  }
 	}
 }
-
 void sendScreenBuffer(){
   //updates the matrixes with the screen buffer contents
 	for (byte j = 0; j < COLHEIGHT; j++){
@@ -205,3 +191,24 @@ void wipeDisplays(){
     updateAll(colNumber, 0);
   }
 }
+void decideMoveIncrements(int16_t &xMove, int16_t &yMove){
+  //check it's not a false reading then decide which direction to go
+  if (xMove > -offset && xMove < offset){
+    xMoveIncrement = 0;
+  }
+  else if (xMove > offset){
+    xMoveIncrement = 1;
+  }
+  else if (xMove < -offset){
+    xMoveIncrement = -1;
+  }
+  if (yMove > -offset && yMove < offset){
+    yMoveIncrement = 0;
+  }
+  else if (yMove > offset){
+    yMoveIncrement = -1;
+  }
+  else if (yMove < -offset){
+    yMoveIncrement = 1;
+  }
+};
