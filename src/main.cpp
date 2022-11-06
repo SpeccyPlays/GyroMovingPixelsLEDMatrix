@@ -43,30 +43,32 @@ class pixels {
   public :
   uint8_t x = 0;
   uint8_t y = 0;
+  uint8_t mass = 0;
   void generateXYValues(){
     //co ordinates start at 0 so one matrix will be x 0-7 and y 0-7
     x = random(0, (numOfModules * ROWWIDTH) - 1);
     y = random(0, COLHEIGHT - 1);
+    mass = random(1, 3); 
   }
   void updateXandY(int8_t moveX, int8_t moveY){
     //Update position as long as pixel not at edge of matrix
-    if ((x + moveX) < 0){
+    if ((x + (moveX * mass)) < 0){
       x = 0;
     }
-    else if ((x + moveX) > ((numOfModules * ROWWIDTH) - 1)){
+    else if ((x + (moveX * mass)) > ((numOfModules * ROWWIDTH) - 1)){
       x = (numOfModules * ROWWIDTH) - 1;
     }
     else {
-      x += moveX;
+      x += (moveX * mass);
     }
-    if ((y + moveY) < 0){
+    if ((y + (moveY * mass)) < 0){
       y = 0;
     }
-    else if ((y + moveY) > (COLHEIGHT -1)){
+    else if ((y + (moveY * mass)) > (COLHEIGHT -1)){
       y = (COLHEIGHT -1);
     }
     else{
-      y += moveY;
+      y += (moveY * mass);
     }
   }
 };
