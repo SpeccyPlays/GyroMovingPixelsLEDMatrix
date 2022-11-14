@@ -27,46 +27,77 @@ class pixels {
   public :
   uint8_t x = 0;
   uint8_t y = 0;
-  uint8_t mass = 0;
+  int8_t vx = 0;
+  int8_t vy = 0;
+  int8_t xMoveIncrement = 0;
+  int8_t yMoveIncrement = 0;
   void generateXYValues(){
     //co ordinates start at 0 so one matrix will be x 0-7 and y 0-7
     x = random(0, 31);
     y = random(0, 23);
-    mass = 1; 
   }
+  void decideMoveIncrements(int16_t &xMove, int16_t &yMove, int16_t offset){
+  //check it's not a false reading then decide which direction to go
+    vx ++;
+    vy ++;
+    if (xMove > -offset && xMove < offset){
+      xMoveIncrement = 0;
+    }
+    else if (xMove > offset){
+      xMoveIncrement = 1 * vx;
+    }
+    else if (xMove < -offset){
+      xMoveIncrement = -1 * vx;
+    }
+    if (yMove > -offset && yMove < offset){
+      yMoveIncrement = 0;
+    }
+    else if (yMove > offset){
+      yMoveIncrement = -1 * vy;
+    }
+    else if (yMove < -offset){
+      yMoveIncrement = 1 * vy;
+    }
+    if (vx > 4){
+      vx = 4;
+    }
+    if (vy > 4){
+      vy = 4;
+    }
+  };
   void updateXandY(int8_t moveX, int8_t moveY){
     //Update position as long as pixel not at edge of matrix
-    if ((x + (moveX * mass)) < 0){
+    if (x + moveX < 0){
+      vx = 0;
       x = 0;
     }
-    else if ((x + (moveX * mass)) > ((32) - 1)){
+    else if (x + moveX > ((32) - 1)){
+      vx = 0;
       x = (32) - 1;
     }
     else {
-      x += (moveX * mass);
+      x += moveX;
     }
-    if ((y + (moveY * mass)) < 0){
+    if (y + moveY < 0){
+      vy = 0;
       y = 0;
     }
-    else if ((y + (moveY * mass)) > (24 -1)){
+    else if (y + moveY > (24 -1)){
+      vy = 0;
       y = (24 -1);
     }
     else{
-      y += (moveY * mass);
+      y += moveY;
     }
   }
 };
 //create the pixel object
-pixels pixel[120];
-void decideMoveIncrements(int16_t &xMove, int16_t &yMove);
+pixels pixel [64];
 //GY-521 details
 const int MPU=0x68;
 MPU6050 gyro;
 int16_t accelX, accelY;
-int8_t xMoveIncrement = 0;
-int8_t yMoveIncrement = 0;
 int16_t offset = 800; //mine kept getting false readings between -600, +600
-
 void setup() {
   Serial.begin(115200);
   Wire.begin();
@@ -94,41 +125,22 @@ void loop() {
   for (byte i = 0; i < sizeof(pixel)/sizeof(pixel[0]); i++){
     accelX = gyro.getAccelerationX();
     accelY = gyro.getAccelerationY();
-    decideMoveIncrements(accelX, accelY);
-    pixel[i].updateXandY(xMoveIncrement, yMoveIncrement);
+    pixel[i].decideMoveIncrements(accelX, accelY, offset);
+    pixel[i].updateXandY(pixel[i].xMoveIncrement, pixel[i].yMoveIncrement);
   }
   //collision detect
   for (byte i = 1;  i < sizeof(pixel)/sizeof(pixel[0]); i++){
     if ((pixel[i].x == pixel[i-1].x)){
-      pixel[i].updateXandY(-xMoveIncrement, 0);
+      pixel[i].vx = 0;
+      pixel[i].updateXandY(-pixel[i].xMoveIncrement, 0);
     }
-    if (pixel[i].y == pixel[i-1].y){
-      pixel[i].updateXandY(0, -yMoveIncrement);
+    if ((pixel[i].y == pixel[i-1].y)){
+      pixel[i].vy = 0;
+      pixel[i].updateXandY(0, -pixel[i].yMoveIncrement);
     }
     matrix.drawPixel(pixel[i].x, pixel[i].y);
   }
   matrix.sendScreenBuffer();
   matrix.wipeScreenBuffer();
   delay(0);
-}
-void decideMoveIncrements(int16_t &xMove, int16_t &yMove){
-  //check it's not a false reading then decide which direction to go
-  if (xMove > -offset && xMove < offset){
-    xMoveIncrement = 0;
-  }
-  else if (xMove > offset){
-    xMoveIncrement = 1;
-  }
-  else if (xMove < -offset){
-    xMoveIncrement = -1;
-  }
-  if (yMove > -offset && yMove < offset){
-    yMoveIncrement = 0;
-  }
-  else if (yMove > offset){
-    yMoveIncrement = -1;
-  }
-  else if (yMove < -offset){
-    yMoveIncrement = 1;
-  }
 };
