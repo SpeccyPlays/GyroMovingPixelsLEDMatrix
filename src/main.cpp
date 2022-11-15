@@ -38,6 +38,7 @@ class pixels {
   }
   void decideMoveIncrements(int16_t &xMove, int16_t &yMove, int16_t offset){
   //check it's not a false reading then decide which direction to go
+  //increase velocity
     vx ++;
     vy ++;
     if (xMove > -offset && xMove < offset){
@@ -67,6 +68,7 @@ class pixels {
   };
   void updateXandY(int8_t moveX, int8_t moveY){
     //Update position as long as pixel not at edge of matrix
+    //if it is at edge of matrix, stop it's velocity
     if (x + moveX < 0){
       vx = 0;
       x = 0;
@@ -92,7 +94,10 @@ class pixels {
   }
 };
 //create the pixel object
-pixels pixel [64];
+//100 is pretty much the max due to the qsort process used later
+//higher than this and too much RAM will be used and the Arduino locks up
+pixels pixel [100];
+int compare(const void* a, const void* b);
 //GY-521 details
 const int MPU=0x68;
 MPU6050 gyro;
@@ -119,7 +124,6 @@ void setup() {
 }
 
 void loop() {
-  
   //rather than batch update all the pixels, it looks better taking a reading for each
   //it does slow things down though
   for (byte i = 0; i < sizeof(pixel)/sizeof(pixel[0]); i++){
@@ -128,7 +132,11 @@ void loop() {
     pixel[i].decideMoveIncrements(accelX, accelY, offset);
     pixel[i].updateXandY(pixel[i].xMoveIncrement, pixel[i].yMoveIncrement);
   }
-  //collision detect
+  //the sand behaves a bit better with a sort on y values
+  //the sand will kind of stack up then slowly fall down
+  qsort(pixel, sizeof(pixel)/sizeof(pixel[0]),  sizeof(pixels), compare);
+
+  //very basic collision detect
   for (byte i = 1;  i < sizeof(pixel)/sizeof(pixel[0]); i++){
     if ((pixel[i].x == pixel[i-1].x)){
       pixel[i].vx = 0;
@@ -142,5 +150,18 @@ void loop() {
   }
   matrix.sendScreenBuffer();
   matrix.wipeScreenBuffer();
-  delay(0);
 };
+int compare(const void* a, const void* b)
+//used in the qsort
+//copied this from a qsort guide then adapted to my use
+{
+	const pixels* x = (pixels*) a;
+	const pixels* y = (pixels*) b;
+
+	if (x->y > y->y)
+		return 1;
+	else if (x->y < y->y)
+		return -1;
+
+	return 0;
+}
